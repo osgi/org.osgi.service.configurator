@@ -22,6 +22,8 @@ Import-Package: *
    tb10.jar,\
    tb11a.jar ,\
    tb11b.jar ,\
+   tb12.jar ,\
+   tb13.jar ,\
    init_config.json=configs/init_config.json
 
 p: org.osgi.test.cases.configurator

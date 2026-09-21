@@ -1,0 +1,18 @@
+{
+  "org.osgi.test.reserved.policy":
+  {
+    ":configurator:policy": "default",
+    ":configurator:policy:String": "force",
+    "foo": "bundle"
+  },
+  "org.osgi.test.reserved.ranking":
+  {
+    ":configurator:ranking": 10,
+    ":configurator:ranking:Integer": 20,
+    "foo": "losing"
+  },
+  "org.osgi.test.reserved.control":
+  {
+    "foo": "bar"
+  }
+}

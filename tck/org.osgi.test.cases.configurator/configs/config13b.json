@@ -1,0 +1,8 @@
+{
+  "org.osgi.test.reserved.ranking":
+  {
+    ":configurator:ranking": 15,
+    ":configurator:ranking:Integer": 5,
+    "foo": "winning"
+  }
+}
