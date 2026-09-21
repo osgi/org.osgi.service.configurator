@@ -1,0 +1,6 @@
+{
+  "org.osgi.test.metadata.control":
+  {
+    "foo": "bar"
+  }
+}
