@@ -26,12 +26,15 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Method;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
+import java.util.concurrent.TimeUnit;
 
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
@@ -82,8 +85,8 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 		String pid = "org.osgi.test.init.pid1";
 		Map<String,String> launchConfig = getConfiguration(getName());
 		String config = "{\":configurator:resource-version\": 1,"
-				+ "\":configurator:symbolic-name\": \"org.osgi.test.config.init\","
-				+ "\":configurator:version\": \"1.0.0\"," + "\"" + pid
+				+ "\":configurator:symbolic-name\": \"org.osgi.test.config.init-name_1\","
+				+ "\":configurator:version\": \"1.2.3.qualifier-1\"," + "\"" + pid
 				+ "\":{\"foo\": \"bar\"}}";
 		launchConfig.put("configurator.initial", config);
 
@@ -133,18 +136,105 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 		framework.waitForStop(10000);
 	}
 
+	public void testInitialConfigInvalidResourceVersionType() throws Exception {
+		assertInitialConfigIgnored(":configurator:resource-version", "\"1\"");
+	}
+
+	public void testInitialConfigFractionalResourceVersion() throws Exception {
+		assertInitialConfigIgnored(":configurator:resource-version", "1.5");
+	}
+
+	public void testInitialConfigInvalidSymbolicNameType() throws Exception {
+		assertInitialConfigIgnored(":configurator:symbolic-name", "1");
+	}
+
+	public void testInitialConfigInvalidSymbolicNameSyntax() throws Exception {
+		for (String symbolicName : new String[] {
+				"", ".com.example", "com..example", "com.example.",
+				"com/example", "com:example", "com example", "com.ex\u00e4mple"
+		}) {
+			assertInitialConfigIgnored(":configurator:symbolic-name",
+					"\"" + symbolicName + "\"");
+		}
+	}
+
+	public void testInitialConfigInvalidVersionType() throws Exception {
+		assertInitialConfigIgnored(":configurator:version", "1");
+	}
+
+	public void testInitialConfigInvalidVersionSyntax() throws Exception {
+		for (String version : new String[] {
+				"", "+1", "1..2", "1.2.x", "1.2.3.", "1.2.3.bad qualifier",
+				"1.2.3.4.5", "-1.2.3", " 1.2.3"
+		}) {
+			assertInitialConfigIgnored(":configurator:version",
+					"\"" + version + "\"");
+		}
+	}
+
+	private void assertInitialConfigIgnored(String key, String value)
+			throws Exception {
+		String pid = "org.osgi.test.init.invalid";
+		String controlPid = "org.osgi.test.init.control";
+		String metadata = "\":configurator:resource-version\": 1,"
+				+ "\":configurator:symbolic-name\": \"org.osgi.test.config.init\","
+				+ "\":configurator:version\": \"1.0.0\",";
+		String config = "{" + metadata.replaceFirst(
+				"\"" + key + "\": [^,]+,", "\"" + key + "\": " + value + ",")
+				+ "\"" + pid + "\": {\"foo\": \"bar\"}}";
+		String control = "{" + metadata + "\"" + controlPid
+				+ "\": {\"foo\": \"bar\"}}";
+		File invalidFile = getContext().getDataFile("initial-invalid.json");
+		File controlFile = getContext().getDataFile("initial-valid.json");
+		Files.write(invalidFile.toPath(), config.getBytes(StandardCharsets.UTF_8));
+		Files.write(controlFile.toPath(), control.getBytes(StandardCharsets.UTF_8));
+		Map<String,String> launchConfig = getConfiguration(getName());
+		launchConfig.put("configurator.initial", invalidFile.toURI() + ","
+				+ controlFile.toURI());
+
+		Framework framework = startFramework(launchConfig);
+		try {
+			// A valid resource must be processed too: absence alone could mean
+			// the Configurator has not started processing initial resources yet.
+			assertTrue("The valid initial resource must be processed",
+					hasConfig(framework, controlPid, 5000));
+			assertFalse("The resource with " + key + " = " + value
+					+ " must be ignored", hasConfig(framework, pid, 1000));
+		} finally {
+			framework.stop();
+			framework.waitForStop(10000);
+		}
+	}
+
+	private boolean hasConfig(Framework framework, String pid, long timeout)
+			throws Exception {
+		long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeout);
+		do {
+			if (hasConfig(framework, pid))
+				return true;
+			Thread.sleep(20);
+		} while (System.nanoTime() < deadline);
+		return false;
+	}
+
 	private boolean hasConfig(Framework framework, String pid)
 			throws Exception {
 		ServiceReference< ? >[] refs = framework.getBundleContext()
 				.getAllServiceReferences(null,
 						"(objectClass=org.osgi.service.cm.ConfigurationAdmin)");
+		if (refs == null)
+			return false;
 
 		Object configAdmin = framework.getBundleContext().getService(refs[0]);
-		Method listConfigs = configAdmin.getClass()
-				.getMethod("listConfigurations", String.class);
-		Object configs = listConfigs.invoke(configAdmin,
-				"(" + Constants.SERVICE_PID + "=" + pid + ")");
-		return configs != null;
+		try {
+			Method listConfigs = configAdmin.getClass()
+					.getMethod("listConfigurations", String.class);
+			Object configs = listConfigs.invoke(configAdmin,
+					"(" + Constants.SERVICE_PID + "=" + pid + ")");
+			return configs != null;
+		} finally {
+			framework.getBundleContext().ungetService(refs[0]);
+		}
 	}
 
 	private Framework startFramework(Map<String,String> configuration)
@@ -158,12 +248,18 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 
 		// create and start framework
 		Framework framework = frameworkFactory.newFramework(configuration);
-		framework.init();
-		framework.start();
+		try {
+			framework.init();
+			framework.start();
 
-		// install bundles in framework
-		installFramework(framework);
-		return framework;
+			// install bundles in framework
+			installFramework(framework);
+			return framework;
+		} catch (Exception | Error e) {
+			framework.stop();
+			framework.waitForStop(10000);
+			throw e;
+		}
 	}
 
 	private String getFrameworkFactoryClassName() throws IOException {
