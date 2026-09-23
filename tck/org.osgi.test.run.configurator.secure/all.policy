@@ -1,0 +1,8 @@
+// Permissions for the code on the classpath (bnd launcher and
+// tester). With org.osgi.framework.security=osgi Equinox checks
+// this code too; without these permissions even the System.exit
+// at the end of the run fails. What the bundles may do is decided
+// by the ConditionalPermissionAdmin, not by this file.
+grant {
+    permission java.security.AllPermission;
+};
