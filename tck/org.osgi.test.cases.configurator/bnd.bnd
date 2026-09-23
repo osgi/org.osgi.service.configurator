@@ -1,0 +1,38 @@
+# Set javac settings from JDT prefs
+
+Bundle-Description                  : A test case for the event generic mechanism implementation.
+
+-conditionalpackage                 = org.osgi.test.support.*
+-privatepackage                     =  \
+    ${p}.junit
+Export-Package                      = \
+    ${p}.service
+Import-Package: *
+
+-includeresource                    = \
+   tb1.jar ,\
+   tb2.jar ,\
+   tb3.jar ,\
+   tb4.jar ,\
+   tb5.jar ,\
+   tb6.jar ,\
+   tb7.jar ,\
+   tb8.jar ,\
+   tb9.jar ,\
+   tb10.jar,\
+   tb11a.jar ,\
+   tb11b.jar ,\
+   init_config.json=configs/init_config.json
+
+p: org.osgi.test.cases.configurator
+
+# Maven build: workspace includes replaced inline (from cnf/includes and build.bnd in osgi/osgi)
+# -make.maven, not -make: the key is a map entry and would displace
+# a project-level -make (webcontainer also builds .war recipes this
+# way). bnd merges all -make.* entries.
+-make.maven: (*).(jar); type=bnd; recipe="bnd/$1.bnd"
+
+testcases.junit3: ${classes;EXTENDS;junit.framework.TestCase;CONCRETE}
+testcases.junit4: ${classes;HIERARCHY_ANNOTATED;org.junit.Test;CONCRETE}
+testcases.junit5: ${classes;HIERARCHY_INDIRECTLY_ANNOTATED;org.junit.platform.commons.annotation.Testable;CONCRETE}
+Test-Cases: ${sort;${uniq;${testcases.junit3};${testcases.junit4};${testcases.junit5}}}
