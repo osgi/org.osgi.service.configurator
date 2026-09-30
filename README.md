@@ -1,5 +1,9 @@
 # org.osgi.service.configurator
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/osgi/org.osgi.service.configurator/badge)](https://securityscorecards.dev/viewer/?uri=github.com/osgi/org.osgi.service.configurator)
+[![build](https://github.com/osgi/org.osgi.service.configurator/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/osgi/org.osgi.service.configurator/actions/workflows/build.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/org.osgi/org.osgi.service.configurator)](https://central.sonatype.com/artifact/org.osgi/org.osgi.service.configurator)
+
 OSGi Specification repo for org.osgi.service.configurator
 
 Part of the [OSGi Specification Project](https://projects.eclipse.org/projects/technology.osgi).
