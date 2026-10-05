@@ -1,0 +1,8 @@
+{
+  ":configurator:symbolic-name": "com.example.feature",
+  ":configurator:version": "1.2.invalid",
+  "org.osgi.test.invalid.version":
+  {
+    "foo": "bar"
+  }
+}
