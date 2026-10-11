@@ -18,6 +18,10 @@
 
 package org.osgi.test.cases.configurator.junit;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.Assertions.within;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,8 +33,11 @@ import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.Iterator;
 
-import org.junit.Assert;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceRegistration;
@@ -38,25 +45,36 @@ import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.cm.ConfigurationEvent;
 import org.osgi.service.cm.ConfigurationListener;
-import org.osgi.test.support.OSGiTestCase;
+import org.osgi.test.common.annotation.InjectBundleContext;
+import org.osgi.test.common.annotation.InjectBundleInstaller;
+import org.osgi.test.common.install.BundleInstaller;
 import org.osgi.util.promise.Deferred;
 import org.osgi.util.promise.Promise;
 import org.osgi.util.tracker.ServiceTracker;
-public class ConfiguratorTestCase extends OSGiTestCase {
+public class ConfiguratorTestCase {
+
+	@InjectBundleContext
+	BundleContext		context;
+
+	@InjectBundleInstaller
+	BundleInstaller		installer;
 	private ConfigurationAdmin configAdmin;
 	private ServiceTracker<ConfigurationAdmin,ConfigurationAdmin> configAdminTracker;
 
+	@BeforeEach
 	public void setUp() throws Exception {
 		configAdminTracker = new ServiceTracker<>(
-				getContext(), ConfigurationAdmin.class, null);
+				context, ConfigurationAdmin.class, null);
 		configAdminTracker.open();
 		configAdmin = configAdminTracker.waitForService(5000);
 	}
 
+	@AfterEach
 	public void tearDown() {
 		configAdminTracker.close();
 	}
 
+	@Test
 	public void testIgnoreComments() throws Exception {
 		String pid = "org.osgi.test.pid1";
 		Deferred<Configuration> deleted = new Deferred<>();
@@ -65,28 +83,28 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				pid, updated, deleted);
 		try {
-			assertNull("Precondition, should not yet have the test config",
-					readConfig(pid));
+			assertThat(readConfig(pid)).as("Precondition, should not yet have the test config").isNull();
 
-			Bundle tb1 = install("tb1.jar");
-			assertFalse(getTimeoutPromise(updated).isDone());
+			Bundle tb1 = installer.installBundle("tb1.jar", false);
+			assertThat(getTimeoutPromise(updated).isDone()).isFalse();
 			tb1.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
-			assertEquals("bar", props.get("foo"));
-			assertNull(props.get("comment1"));
-			assertNull(props.get("comment2"));
-			assertEquals("bar", props.get("foo2"));
+			assertThat(props.get("foo")).isEqualTo("bar");
+			assertThat(props.get("comment1")).isNull();
+			assertThat(props.get("comment2")).isNull();
+			assertThat(props.get("foo2")).isEqualTo("bar");
 
-			assertFalse(getTimeoutPromise(deleted).isDone());
+			assertThat(getTimeoutPromise(deleted).isDone()).isFalse();
 			tb1.uninstall();
-			assertEquals(pid, getTimeoutPromise(deleted).getValue().getPid());
+			assertThat(getTimeoutPromise(deleted).getValue().getPid()).isEqualTo(pid);
 		} finally {
 			reg.unregister();
 		}
 	}
 
+	@Test
 	public void testBasicConfigurationLifecycle() throws Exception {
 		String pid = "org.osgi.test.pid1";
 		Deferred<Configuration> deleted = new Deferred<>();
@@ -95,25 +113,25 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				pid, updated, deleted);
 		try {
-			assertNull("Precondition, should not yet have the test config",
-					readConfig(pid));
+			assertThat(readConfig(pid)).as("Precondition, should not yet have the test config").isNull();
 
-			Bundle tb1 = install("tb1.jar");
-			assertFalse(getTimeoutPromise(updated).isDone());
+			Bundle tb1 = installer.installBundle("tb1.jar", false);
+			assertThat(getTimeoutPromise(updated).isDone()).isFalse();
 			tb1.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
-			assertEquals("bar", props.get("foo"));
+			assertThat(props.get("foo")).isEqualTo("bar");
 
-			assertFalse(getTimeoutPromise(deleted).isDone());
+			assertThat(getTimeoutPromise(deleted).isDone()).isFalse();
 			tb1.uninstall();
-			assertEquals(pid, getTimeoutPromise(deleted).getValue().getPid());
+			assertThat(getTimeoutPromise(deleted).getValue().getPid()).isEqualTo(pid);
 		} finally {
 			reg.unregister();
 		}
 	}
 	
+	@Test
 	public void testUpdateConfigBundle() throws Exception {
 		String pid = "org.osgi.test.pid11";
 		Deferred<Configuration> updated = new Deferred<>();
@@ -123,24 +141,23 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 				pid, updated, null);
 		ServiceRegistration<ConfigurationListener> reg2 = null;
 		try {
-			assertNull("Precondition, should not yet have the test config",
-					readConfig(pid));
+			assertThat(readConfig(pid)).as("Precondition, should not yet have the test config").isNull();
 
-			Bundle tb11 = install("tb11a.jar");
-			assertFalse(getTimeoutPromise(updated).isDone());
+			Bundle tb11 = installer.installBundle("tb11a.jar", false);
+			assertThat(getTimeoutPromise(updated).isDone()).isFalse();
 			tb11.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
-			assertEquals("daa", props.get("taa"));
-			assertEquals("doo", props.get("too"));
+			assertThat(props.get("taa")).isEqualTo("daa");
+			assertThat(props.get("too")).isEqualTo("doo");
 
 			reg2 = registerConfigListener(pid, updated2, null);
-			tb11.update(entryStream("tb11b.jar"));
+			tb11.update(context.getBundle().getEntry("tb11b.jar").openStream());
 			Configuration cfg2 = getTimeoutPromise(updated2).getValue();
 			Dictionary<String,Object> props2 = cfg2.getProperties();
-			assertEquals("daadaa", props2.get("taa"));
-			assertEquals("doo", props2.get("too"));
+			assertThat(props2.get("taa")).isEqualTo("daadaa");
+			assertThat(props2.get("too")).isEqualTo("doo");
 
 			tb11.uninstall();
 		} finally {
@@ -150,6 +167,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testIgnoreOverwrite() throws Exception {
 		String pid = "org.osgi.test.pid1";
 		Deferred<Configuration> deleted = new Deferred<>();
@@ -163,27 +181,28 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				pid, updated, deleted);
 		try {
-			Bundle tb1 = install("tb1.jar");
-			assertFalse(getTimeoutPromise(updated).isDone());
+			Bundle tb1 = installer.installBundle("tb1.jar", false);
+			assertThat(getTimeoutPromise(updated).isDone()).isFalse();
 			tb1.start();
 
 			// should not be updated
-			assertFalse(getTimeoutPromise(updated).isDone());
+			assertThat(getTimeoutPromise(updated).isDone()).isFalse();
 
 			cfg = configAdmin.getConfiguration(pid, "?");
 			props = cfg.getProperties();
-			assertEquals("baz", props.get("foo"));
+			assertThat(props.get("foo")).isEqualTo("baz");
 
 			// nothing should happen on uninstall either
-			assertFalse(getTimeoutPromise(deleted).isDone());
+			assertThat(getTimeoutPromise(deleted).isDone()).isFalse();
 			tb1.uninstall();
-			assertFalse(getTimeoutPromise(deleted).isDone());
+			assertThat(getTimeoutPromise(deleted).isDone()).isFalse();
 		} finally {
 			reg.unregister();
 			cfg.delete();
 		}
 	}
 
+	@Test
 	public void testForceOverwrite() throws Exception {
 		String pid = "org.osgi.test.pid10";
 		Deferred<Configuration> updated = new Deferred<>();
@@ -199,19 +218,18 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		Configuration cfg2 = null;
 		ServiceRegistration<ConfigurationListener> reg2 = null, reg3 = null;
 		try {
-			assertEquals("baz",
-					getTimeoutPromise(updated).getValue().getProperties().get(
-							"foo"));
+			assertThat(getTimeoutPromise(updated).getValue().getProperties().get(
+							"foo")).isEqualTo("baz");
 
 			Deferred<Configuration> updated2 = new Deferred<>();
 			reg2 = registerConfigListener(pid, updated2, null);
 
-			Bundle tb10 = install("tb10.jar");
+			Bundle tb10 = installer.installBundle("tb10.jar", false);
 			tb10.start();
 			cfg2 = getTimeoutPromise(updated2).getValue();
 
 			props = cfg2.getProperties();
-			assertEquals("yes!", props.get("foo"));
+			assertThat(props.get("foo")).isEqualTo("yes!");
 
 			tb10.uninstall();
 		} finally {
@@ -221,6 +239,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testForceOverwrite2() throws Exception {
 		String pid = "org.osgi.test.pid8";
 		Deferred<Configuration> updated = new Deferred<>();
@@ -230,11 +249,11 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg1 = null, reg2 = null,
 				reg3 = null;
 		try {
-			Bundle tb7 = install("tb7.jar");
+			Bundle tb7 = installer.installBundle("tb7.jar", false);
 			tb7.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
-			assertEquals("test!", cfg.getProperties().get("foo"));
+			assertThat(cfg.getProperties().get("foo")).isEqualTo("test!");
 
 			Deferred<Configuration> updated1 = new Deferred<>();
 			reg1 = registerConfigListener(pid, updated1, null);
@@ -244,15 +263,15 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 			props.put("foo", "ooof");
 			cfg.update(props);
 			Configuration cfg1 = getTimeoutPromise(updated1).getValue();
-			assertEquals("ooof", cfg1.getProperties().get("foo"));
+			assertThat(cfg1.getProperties().get("foo")).isEqualTo("ooof");
 
 			Deferred<Configuration> updated2 = new Deferred<>();
 			reg2 = registerConfigListener(pid, updated2, null);
 
-			Bundle tb8 = install("tb8.jar");
+			Bundle tb8 = installer.installBundle("tb8.jar", false);
 			tb8.start();
 			Configuration cfg2 = getTimeoutPromise(updated2).getValue();
-			assertEquals("tadaa!", cfg2.getProperties().get("foo"));
+			assertThat(cfg2.getProperties().get("foo")).isEqualTo("tadaa!");
 
 			Deferred<Configuration> updated3 = new Deferred<>();
 			reg3 = registerConfigListener(pid, updated3, null);
@@ -260,7 +279,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 			tb8.uninstall();
 
 			Configuration cfg3 = getTimeoutPromise(updated3).getValue();
-			assertEquals("test!", cfg3.getProperties().get("foo"));
+			assertThat(cfg3.getProperties().get("foo")).isEqualTo("test!");
 			tb7.uninstall();
 		} finally {
 			unregister(reg);
@@ -270,6 +289,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testConfigNestingForce() throws Exception {
 		String pid = "org.osgi.test.pid8";
 		Deferred<Configuration> updated = new Deferred<>();
@@ -279,24 +299,24 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg3 = null;
 		try {
 			reg = registerConfigListener(pid, updated, null);
-			Bundle tb7 = install("tb7.jar");
+			Bundle tb7 = installer.installBundle("tb7.jar", false);
 			tb7.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
-			assertEquals("test!", cfg.getProperties().get("foo"));
+			assertThat(cfg.getProperties().get("foo")).isEqualTo("test!");
 
 			Deferred<Configuration> updated2 = new Deferred<>();
 			reg2 = registerConfigListener(pid, updated2, null);
-			Bundle tb8 = install("tb8.jar");
+			Bundle tb8 = installer.installBundle("tb8.jar", false);
 			tb8.start();
 			Configuration cfg2 = getTimeoutPromise(updated2).getValue();
-			assertEquals("tadaa!", cfg2.getProperties().get("foo"));
+			assertThat(cfg2.getProperties().get("foo")).isEqualTo("tadaa!");
 			tb8.uninstall();
 
 			Deferred<Configuration> updated3 = new Deferred<>();
 			reg3 = registerConfigListener(pid, updated3, null);
 			Configuration cfg3 = getTimeoutPromise(updated3).getValue();
-			assertEquals("test!", cfg3.getProperties().get("foo"));
+			assertThat(cfg3.getProperties().get("foo")).isEqualTo("test!");
 
 			tb7.uninstall();
 		} finally {
@@ -306,6 +326,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testConfigNestingNoForce() throws Exception {
 		String pid = "org.osgi.test.pid8";
 		Deferred<Configuration> updated = new Deferred<>();
@@ -315,24 +336,24 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg3 = null;
 		try {
 			reg = registerConfigListener(pid, updated, null);
-			Bundle tb7 = install("tb7.jar");
+			Bundle tb7 = installer.installBundle("tb7.jar", false);
 			tb7.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
-			assertEquals("test!", cfg.getProperties().get("foo"));
+			assertThat(cfg.getProperties().get("foo")).isEqualTo("test!");
 
 			Deferred<Configuration> updated2 = new Deferred<>();
 			reg2 = registerConfigListener(pid, updated2, null);
-			Bundle tb9 = install("tb9.jar");
+			Bundle tb9 = installer.installBundle("tb9.jar", false);
 			tb9.start();
 			Configuration cfg2 = getTimeoutPromise(updated2).getValue();
-			assertEquals("dingdong", cfg2.getProperties().get("foo"));
+			assertThat(cfg2.getProperties().get("foo")).isEqualTo("dingdong");
 			tb9.uninstall();
 
 			Deferred<Configuration> updated3 = new Deferred<>();
 			reg3 = registerConfigListener(pid, updated3, null);
 			Configuration cfg3 = getTimeoutPromise(updated3).getValue();
-			assertEquals("test!", cfg3.getProperties().get("foo"));
+			assertThat(cfg3.getProperties().get("foo")).isEqualTo("test!");
 
 			tb7.uninstall();
 		} finally {
@@ -342,6 +363,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testIgnoreRemove() throws Exception {
 		String pid = "org.osgi.test.pid1";
 		Deferred<Configuration> deleted = new Deferred<>();
@@ -350,29 +372,28 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				pid, updated, deleted);
 		try {
-			assertNull("Precondition, should not yet have the test config",
-					readConfig(pid));
+			assertThat(readConfig(pid)).as("Precondition, should not yet have the test config").isNull();
 
-			Bundle tb1 = install("tb1.jar");
-			assertFalse(getTimeoutPromise(updated).isDone());
+			Bundle tb1 = installer.installBundle("tb1.jar", false);
+			assertThat(getTimeoutPromise(updated).isDone()).isFalse();
 			tb1.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
-			assertEquals("bar", props.get("foo"));
+			assertThat(props.get("foo")).isEqualTo("bar");
 
 			// update configuration
 			props.put("foo", "baz");
 			cfg.update(props);
 
 			// the configuration should not be deleted
-			assertFalse(getTimeoutPromise(deleted).isDone());
+			assertThat(getTimeoutPromise(deleted).isDone()).isFalse();
 			tb1.uninstall();
-			assertFalse(getTimeoutPromise(deleted).isDone());
+			assertThat(getTimeoutPromise(deleted).isDone()).isFalse();
 
 			cfg = readConfig(pid);
 			props = cfg.getProperties();
-			assertEquals("baz", props.get("foo"));
+			assertThat(props.get("foo")).isEqualTo("baz");
 
 			// cleanup ourselves
 			cfg.delete();
@@ -381,6 +402,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testOverwrite() throws Exception {
 		String pid = "org.osgi.test.pid1";
 		Deferred<Configuration> deleted = new Deferred<>();
@@ -394,22 +416,23 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				pid, updated, deleted);
 		try {
-			Bundle tb6 = install("tb6.jar");
-			assertFalse(getTimeoutPromise(updated).isDone());
+			Bundle tb6 = installer.installBundle("tb6.jar", false);
+			assertThat(getTimeoutPromise(updated).isDone()).isFalse();
 			tb6.start();
 
 			cfg = getTimeoutPromise(updated).getValue();
 			props = cfg.getProperties();
-			assertEquals("bar", props.get("foo"));
+			assertThat(props.get("foo")).isEqualTo("bar");
 
-			assertFalse(getTimeoutPromise(deleted).isDone());
+			assertThat(getTimeoutPromise(deleted).isDone()).isFalse();
 			tb6.uninstall();
-			assertEquals(pid, getTimeoutPromise(deleted).getValue().getPid());
+			assertThat(getTimeoutPromise(deleted).getValue().getPid()).isEqualTo(pid);
 		} finally {
 			reg.unregister();
 		}
 	}
 
+	@Test
 	public void testOverwriteRemove() throws Exception {
 		String pid = "org.osgi.test.pid1";
 		Deferred<Configuration> deleted = new Deferred<>();
@@ -418,71 +441,66 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				pid, updated, deleted);
 		try {
-			assertNull("Precondition, should not yet have the test config",
-					readConfig(pid));
+			assertThat(readConfig(pid)).as("Precondition, should not yet have the test config").isNull();
 
-			Bundle tb6 = install("tb6.jar");
-			assertFalse(getTimeoutPromise(updated).isDone());
+			Bundle tb6 = installer.installBundle("tb6.jar", false);
+			assertThat(getTimeoutPromise(updated).isDone()).isFalse();
 			tb6.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
-			assertEquals("bar", props.get("foo"));
+			assertThat(props.get("foo")).isEqualTo("bar");
 
 			// update configuration
 			props.put("foo", "baz");
 			cfg.update(props);
 
 			// the configuration should still be deleted
-			assertFalse(getTimeoutPromise(deleted).isDone());
+			assertThat(getTimeoutPromise(deleted).isDone()).isFalse();
 			tb6.uninstall();
-			assertEquals(pid, getTimeoutPromise(deleted).getValue().getPid());
+			assertThat(getTimeoutPromise(deleted).getValue().getPid()).isEqualTo(pid);
 		} finally {
 			reg.unregister();
 		}
 	}
 
+	@Test
 	public void testNoRequirement() throws Exception {
 		String pid = "org.osgi.test.pid1";
 
 		try {
-			assertNull("Precondition, should not yet have the test config",
-					readConfig(pid));
+			assertThat(readConfig(pid)).as("Precondition, should not yet have the test config").isNull();
 
-			Bundle tb5 = install("tb5.jar");
+			Bundle tb5 = installer.installBundle("tb5.jar", false);
 			tb5.start();
 
-			assertNull(
-					"This test bundle has no requirement (osgi.extender=osgi.configurator),"
-							+ " hence no configuration should be done",
-					readConfig(pid));
+			assertThat(readConfig(pid)).as("This test bundle has no requirement (osgi.extender=osgi.configurator),"
+							+ " hence no configuration should be done").isNull();
 
 			tb5.uninstall();
 		} finally {}
 	}
 
+	@Test
 	public void testImplicitDatatypes() throws Exception {
 		Deferred<Configuration> updated = new Deferred<>();
 
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				"org.osgi.test.pid2", updated, null);
 		try {
-			Bundle tb2 = install("tb2.jar");
+			Bundle tb2 = installer.installBundle("tb2.jar", false);
 			tb2.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
-			assertEquals(6, props.size());
-			assertEquals(true, props.get("bval"));
-			assertEquals(1234L, props.get("ival"));
-			assertEquals(-2.718, props.get("dval"));
-			assertEquals("bar", props.get("sval"));
-			assertEquals(
-					"{\"a\":1,\"b\":\"2\",\"c\":{\"d\":true,\"e\":[999,1000]}}",
-					((String) props.get("oval")).replaceAll("\\s", ""));
+			assertThat(props.size()).isEqualTo(6);
+			assertThat(props.get("bval")).isEqualTo(true);
+			assertThat(props.get("ival")).isEqualTo(1234L);
+			assertThat(props.get("dval")).isEqualTo(-2.718);
+			assertThat(props.get("sval")).isEqualTo("bar");
+			assertThat(((String) props.get("oval")).replaceAll("\\s", "")).isEqualTo("{\"a\":1,\"b\":\"2\",\"c\":{\"d\":true,\"e\":[999,1000]}}");
 
-			assertEquals("org.osgi.test.pid2",
-					props.get(Constants.SERVICE_PID));
+			assertThat(props.get(Constants.SERVICE_PID)).isEqualTo("org.osgi.test.pid2");
 
 			tb2.uninstall();
 		} finally {
@@ -490,26 +508,27 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testExplicitDatatypes() throws Exception {
 		Deferred<Configuration> updated = new Deferred<>();
 
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				"org.osgi.test.pid3a", updated, null);
 		try {
-			Bundle tb2 = install("tb2.jar");
+			Bundle tb2 = installer.installBundle("tb2.jar", false);
 			tb2.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
-			assertEquals(Integer.valueOf(1234), props.get("Ival"));
-			assertEquals(Boolean.TRUE, props.get("Bval"));
-			assertEquals('q', props.get("Cval"));
-			assertEquals(Long.MAX_VALUE, props.get("Lval"));
-			assertEquals("false", props.get("Sval"));
-			assertEquals(-12.34f, props.get("Fval"));
-			assertEquals(3.141592653589793, props.get("Dval"));
-			assertEquals(Byte.valueOf("-128"), props.get("ByteVal"));
-			assertEquals(Short.valueOf("16384"), props.get("ShortVal"));
+			assertThat(props.get("Ival")).isEqualTo(Integer.valueOf(1234));
+			assertThat(props.get("Bval")).isEqualTo(Boolean.TRUE);
+			assertThat(props.get("Cval")).isEqualTo('q');
+			assertThat(props.get("Lval")).isEqualTo(Long.MAX_VALUE);
+			assertThat(props.get("Sval")).isEqualTo("false");
+			assertThat(props.get("Fval")).isEqualTo(-12.34f);
+			assertThat(props.get("Dval")).isEqualTo(3.141592653589793);
+			assertThat(props.get("ByteVal")).isEqualTo(Byte.valueOf("-128"));
+			assertThat(props.get("ShortVal")).isEqualTo(Short.valueOf("16384"));
 
 			tb2.uninstall();
 		} finally {
@@ -517,34 +536,34 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testArraysBasic() throws Exception {
 		Deferred<Configuration> updated = new Deferred<>();
 
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				"org.osgi.test.pid4a", updated, null);
 		try {
-			Bundle tb2 = install("tb2.jar");
+			Bundle tb2 = installer.installBundle("tb2.jar", false);
 			tb2.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
-			Assert.assertArrayEquals(new Boolean[] {
+			assertThat((Object[]) props.get("ba")).isEqualTo(new Boolean[] {
 					true, true, false, true
-			}, (Object[]) props.get("ba"));
-			Assert.assertArrayEquals(new Long[] {
+			});
+			assertThat((Object[]) props.get("la")).isEqualTo(new Long[] {
 					Long.MAX_VALUE, Long.MIN_VALUE
-			}, (Object[]) props.get("la"));
-			Assert.assertArrayEquals(new Double[] {
+			});
+			assertThat((Object[]) props.get("da")).isEqualTo(new Double[] {
 					-999.999
-			}, (Object[]) props.get("da"));
-			Assert.assertArrayEquals(new String[] {
+			});
+			assertThat((Object[]) props.get("sa")).isEqualTo(new String[] {
 					"one", "two", "three"
-			}, (Object[]) props.get("sa"));
-			Assert.assertArrayEquals(new String[] {
+			});
+			assertThat((Object[]) props.get("oa")).isEqualTo(new String[] {
 					"{\"foo\":{\"yo\":\"ya\"}}", "{\"bar\":{\"to\":9182}}"
-			}, (Object[]) props.get("oa"));
-			Assert.assertArrayEquals(new String[] {},
-					(Object[]) props.get("xa"));
+			});
+			assertThat((Object[]) props.get("xa")).isEqualTo(new String[] {});
 
 			tb2.uninstall();
 		} finally {
@@ -552,46 +571,46 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testArraysSpecificBoxed() throws Exception {
 		Deferred<Configuration> updated = new Deferred<>();
 
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				"org.osgi.test.pid4b", updated, null);
 		try {
-			Bundle tb2 = install("tb2.jar");
+			Bundle tb2 = installer.installBundle("tb2.jar", false);
 			tb2.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
-			Assert.assertArrayEquals(new Boolean[] {
+			assertThat((Object[]) props.get("ba")).isEqualTo(new Boolean[] {
 					true, true, false, true
-			}, (Object[]) props.get("ba"));
-			Assert.assertArrayEquals(new Character[] {
+			});
+			assertThat((Object[]) props.get("ca")).isEqualTo(new Character[] {
 					'h', 'e', 'l', 'l', 'o'
-			}, (Object[]) props.get("ca"));
-			Assert.assertArrayEquals(new Double[] {
+			});
+			assertThat((Object[]) props.get("da")).isEqualTo(new Double[] {
 					-999.999
-			}, (Object[]) props.get("da"));
-			Assert.assertArrayEquals(new Float[] {
+			});
+			assertThat((Object[]) props.get("fa")).isEqualTo(new Float[] {
 					-0.1f, 0f, 0.1f, 0f, -0.1f
-			}, (Object[]) props.get("fa"));
-			Assert.assertArrayEquals(new Integer[] {
+			});
+			assertThat((Object[]) props.get("ia")).isEqualTo(new Integer[] {
 					-1, -2, -3
-			}, (Object[]) props.get("ia"));
-			Assert.assertArrayEquals(new Long[] {
+			});
+			assertThat((Object[]) props.get("la")).isEqualTo(new Long[] {
 					Long.MAX_VALUE, Long.MIN_VALUE
-			}, (Object[]) props.get("la"));
-			Assert.assertArrayEquals(new String[] {
+			});
+			assertThat((Object[]) props.get("sa")).isEqualTo(new String[] {
 					"one", "two", "three"
-			}, (Object[]) props.get("sa"));
-			Assert.assertArrayEquals(new Byte[] {
+			});
+			assertThat((Object[]) props.get("com.acme.ByteVal")).isEqualTo(new Byte[] {
 					99
-			}, (Object[]) props.get("com.acme.ByteVal"));
-			Assert.assertArrayEquals(new Short[] {
+			});
+			assertThat((Object[]) props.get("com.acme.ShortVal")).isEqualTo(new Short[] {
 					32767, 32767
-			}, (Object[]) props.get("com.acme.ShortVal"));
-			Assert.assertArrayEquals(new Integer[] {},
-					(Object[]) props.get("xa"));
+			});
+			assertThat((Object[]) props.get("xa")).isEqualTo(new Integer[] {});
 
 			tb2.uninstall();
 		} finally {
@@ -599,13 +618,14 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testCollectionsImplicit() throws Exception {
 		Deferred<Configuration> updated = new Deferred<>();
 
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				"org.osgi.test.pid4d", updated, null);
 		try {
-			Bundle tb2 = install("tb2.jar");
+			Bundle tb2 = installer.installBundle("tb2.jar", false);
 			tb2.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
@@ -614,7 +634,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 					props.get("bcg"));
 			assertCollectionEquals(Arrays.asList(-0.1, 0.0, 0.1, 0.0, -0.1),
 					props.get("dcg"));
-			assertEquals(0, ((Collection< ? >) props.get("ecg")).size());
+			assertThat(((Collection<?>) props.get("ecg")).size()).isZero();
 			assertCollectionEquals(
 					Arrays.asList(Long.MAX_VALUE, Long.MIN_VALUE),
 					props.get("lcg"));
@@ -627,13 +647,14 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testCollectionsSpecific() throws Exception {
 		Deferred<Configuration> updated = new Deferred<>();
 
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				"org.osgi.test.pid4e", updated, null);
 		try {
-			Bundle tb2 = install("tb2.jar");
+			Bundle tb2 = installer.installBundle("tb2.jar", false);
 			tb2.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
@@ -663,13 +684,14 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testArraysSpecificPrimitive() throws Exception {
 		Deferred<Configuration> updated = new Deferred<>();
 
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				"org.osgi.test.pid4c", updated, null);
 		try {
-			Bundle tb2 = install("tb2.jar");
+			Bundle tb2 = installer.installBundle("tb2.jar", false);
 			tb2.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
@@ -677,27 +699,27 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 			assertArrayEquals(new boolean[] {
 					true, true, false, true
 			}, props.get("ba"));
-			Assert.assertArrayEquals(new char[] {
+			assertThat((char[]) props.get("ca")).isEqualTo(new char[] {
 					'h', 'e', 'l', 'l', 'o'
-			}, (char[]) props.get("ca"));
-			Assert.assertArrayEquals(new double[] {
+			});
+			assertThat((double[]) props.get("da")).containsExactly(new double[] {
 					-999.999
-			}, (double[]) props.get("da"), 0.0000001);
-			Assert.assertArrayEquals(new float[] {
+			}, within(0.0000001));
+			assertThat((float[]) props.get("fa")).containsExactly(new float[] {
 					-0.1f, 0f, 0.1f, 0f, -0.1f
-			}, (float[]) props.get("fa"), 0.0001f);
-			Assert.assertArrayEquals(new int[] {
+			}, within(0.0001f));
+			assertThat((int[]) props.get("ia")).isEqualTo(new int[] {
 					-1, -2, -3
-			}, (int[]) props.get("ia"));
-			Assert.assertArrayEquals(new long[] {
+			});
+			assertThat((long[]) props.get("la")).isEqualTo(new long[] {
 					Long.MAX_VALUE, Long.MIN_VALUE
-			}, (long[]) props.get("la"));
-			Assert.assertArrayEquals(new byte[] {
+			});
+			assertThat((byte[]) props.get("com.acme.ByteVal")).isEqualTo(new byte[] {
 					99
-			}, (byte[]) props.get("com.acme.ByteVal"));
-			Assert.assertArrayEquals(new short[] {
+			});
+			assertThat((short[]) props.get("com.acme.ShortVal")).isEqualTo(new short[] {
 					32767, 32767
-			}, (short[]) props.get("com.acme.ShortVal"));
+			});
 			assertArrayEquals(new boolean[] {}, props.get("xa"));
 
 			tb2.uninstall();
@@ -706,28 +728,29 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testBinaries() throws Exception {
 		Deferred<Configuration> updated = new Deferred<>();
 
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				"binarytest", updated, null);
 		try {
-			Bundle tb2 = install("tb2.jar");
+			Bundle tb2 = installer.installBundle("tb2.jar", false);
 			tb2.start();
 
 			Configuration cfg = getTimeoutPromise(updated).getValue();
 			Dictionary<String,Object> props = cfg.getProperties();
 			Path path = Paths.get(props.get("binaryval").toString());
-			assertTrue(path.toFile().isFile());
-			assertEquals("Binary file1", new String(Files.readAllBytes(path)));
+			assertThat(path.toFile()).isFile();
+			assertThat(new String(Files.readAllBytes(path))).isEqualTo("Binary file1");
 
 			String[] paths = (String[]) props.get("binaryarr");
-			assertEquals(2, paths.length);
+			assertThat(paths).hasSize(2);
 			Path path2 = Paths.get(paths[0]);
-			assertEquals("Binary file2", new String(Files.readAllBytes(path2)));
+			assertThat(new String(Files.readAllBytes(path2))).isEqualTo("Binary file2");
 
 			Path path3 = Paths.get(paths[1]);
-			assertEquals("Binary file3", new String(Files.readAllBytes(path3)));
+			assertThat(new String(Files.readAllBytes(path3))).isEqualTo("Binary file3");
 
 			tb2.uninstall();
 		} finally {
@@ -735,6 +758,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testFactoryConfigurations() throws Exception {
 		Deferred<Configuration> updated1 = new Deferred<>();
 		Deferred<Configuration> updated2 = new Deferred<>();
@@ -745,24 +769,20 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg2 = registerConfigListener(
 				"org.acme.factory~instance2", updated2, null);
 		try {
-			Bundle tb3 = install("tb3.jar");
+			Bundle tb3 = installer.installBundle("tb3.jar", false);
 			tb3.start();
 
 			Configuration cfg1 = getTimeoutPromise(updated1).getValue();
 			Dictionary<String,Object> props1 = cfg1.getProperties();
-			assertEquals("org.acme.factory~instance1",
-					props1.get(Constants.SERVICE_PID));
-			assertEquals("org.acme.factory",
-					props1.get(ConfigurationAdmin.SERVICE_FACTORYPID));
-			assertEquals("someval", props1.get("somekey"));
+			assertThat(props1.get(Constants.SERVICE_PID)).isEqualTo("org.acme.factory~instance1");
+			assertThat(props1.get(ConfigurationAdmin.SERVICE_FACTORYPID)).isEqualTo("org.acme.factory");
+			assertThat(props1.get("somekey")).isEqualTo("someval");
 
 			Configuration cfg2 = getTimeoutPromise(updated2).getValue();
 			Dictionary<String,Object> props2 = cfg2.getProperties();
-			assertEquals("org.acme.factory~instance2",
-					props2.get(Constants.SERVICE_PID));
-			assertEquals("org.acme.factory",
-					props2.get(ConfigurationAdmin.SERVICE_FACTORYPID));
-			assertEquals("someval2", props2.get("somekey"));
+			assertThat(props2.get(Constants.SERVICE_PID)).isEqualTo("org.acme.factory~instance2");
+			assertThat(props2.get(ConfigurationAdmin.SERVICE_FACTORYPID)).isEqualTo("org.acme.factory");
+			assertThat(props2.get("somekey")).isEqualTo("someval2");
 
 			tb3.uninstall();
 		} finally {
@@ -771,6 +791,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		}
 	}
 
+	@Test
 	public void testRanking() throws Exception {
 		Deferred<Configuration> updated1 = new Deferred<>();
 		Deferred<Configuration> updated2 = new Deferred<>();
@@ -781,16 +802,16 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg2 = registerConfigListener(
 				"pid2", updated2, null);
 		try {
-			Bundle tb4 = install("tb4.jar");
+			Bundle tb4 = installer.installBundle("tb4.jar", false);
 			tb4.start();
 
 			Configuration cfg1 = getTimeoutPromise(updated1).getValue();
 			Dictionary<String,Object> props1 = cfg1.getProperties();
-			assertEquals("winning", props1.get("akey"));
+			assertThat(props1.get("akey")).isEqualTo("winning");
 
 			Configuration cfg2 = getTimeoutPromise(updated2).getValue();
 			Dictionary<String,Object> props2 = cfg2.getProperties();
-			assertEquals("winning", props2.get("akey"));
+			assertThat(props2.get("akey")).isEqualTo("winning");
 
 			tb4.uninstall();
 		} finally {
@@ -801,23 +822,23 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 
 	// For some reason Assert doesn't provide this one...
 	private void assertArrayEquals(boolean[] expected, Object actual) {
-		assertTrue(actual instanceof boolean[]);
+		assertThat(actual instanceof boolean[]).isTrue();
 		boolean[] a = (boolean[]) actual;
-		assertEquals(expected.length, a.length);
+		assertThat(a.length).isEqualTo(expected.length);
 		for (int i = 0; i < expected.length; i++) {
-			assertEquals(expected[i], a[i]);
+			assertThat(a[i]).isEqualTo(expected[i]);
 		}
 	}
 
 	private void assertCollectionEquals(Collection< ? > expected,
 			Object actual) {
-		assertTrue(actual instanceof Collection);
+		assertThat(actual).isInstanceOf(Collection.class);
 		Collection< ? > ac = (Collection< ? >) actual;
-		assertEquals(expected.size(), ac.size());
+		assertThat(ac.size()).isEqualTo(expected.size());
 
 		for (Iterator< ? > ei = expected.iterator(), ea = ac.iterator(); ei
 				.hasNext();) {
-			assertEquals(ei.next(), ea.next());
+			assertThat(ea.next()).isEqualTo(ei.next());
 		}
 	}
 
@@ -839,7 +860,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 					return;
 
 				try {
-					ConfigurationAdmin cm = getContext()
+					ConfigurationAdmin cm = context
 							.getService(event.getReference());
 					switch (event.getType()) {
 						case ConfigurationEvent.CM_UPDATED :
@@ -856,7 +877,7 @@ public class ConfiguratorTestCase extends OSGiTestCase {
 				}
 			}
 		};
-		return getContext().registerService(ConfigurationListener.class, cl,
+		return context.registerService(ConfigurationListener.class, cl,
 				null);
 	}
 
