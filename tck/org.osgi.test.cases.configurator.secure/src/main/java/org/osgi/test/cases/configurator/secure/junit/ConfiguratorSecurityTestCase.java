@@ -18,37 +18,56 @@
 
 package org.osgi.test.cases.configurator.secure.junit;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
+
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Dictionary;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleContext;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.cm.ConfigurationEvent;
 import org.osgi.service.cm.ConfigurationListener;
-import org.osgi.test.support.OSGiTestCase;
+import org.osgi.test.common.annotation.InjectBundleContext;
+import org.osgi.test.common.annotation.InjectBundleInstaller;
+import org.osgi.test.common.install.BundleInstaller;
 import org.osgi.util.promise.Deferred;
 import org.osgi.util.tracker.ServiceTracker;
-public class ConfiguratorSecurityTestCase extends OSGiTestCase {
+public class ConfiguratorSecurityTestCase {
+
+	@InjectBundleContext
+	BundleContext		context;
+
+	@InjectBundleInstaller
+	BundleInstaller		installer;
 
 	private ServiceTracker<ConfigurationAdmin,ConfigurationAdmin> configAdminTracker;
 
+	@BeforeEach
 	public void setUp() throws Exception {
 		configAdminTracker = new ServiceTracker<>(
-				getContext(), ConfigurationAdmin.class, null);
+				context, ConfigurationAdmin.class, null);
 		configAdminTracker.open();
 	}
 
+	@AfterEach
 	public void tearDown() {
 		configAdminTracker.close();
 	}
 
+	@Test
 	public void testPermissionOk() throws Exception {
 		checkAppliedFoo("tb1.jar", true);
 	}
 
+	@Test
 	public void testPermissionDenied() throws Exception {
 		checkAppliedFoo("tb2.jar", false);
 	}
@@ -60,16 +79,16 @@ public class ConfiguratorSecurityTestCase extends OSGiTestCase {
 		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
 				"org.osgi.test.pid", updated, null);
 		try {
-			Bundle tb = install(bundle);
+			Bundle tb = installer.installBundle(bundle, false);
 			tb.start();
 
 			Configuration cfg = waitForConfiguration(updated);
 			if (permissionsOk) {
-				assertNotNull(cfg);
+				assertThat(cfg).isNotNull();
 				Dictionary<String,Object> props = cfg.getProperties();
-				assertEquals("bar", props.get("foo"));
+				assertThat(props.get("foo")).isEqualTo("bar");
 			} else {
-				assertNull(cfg);
+				assertThat(cfg).isNull();
 			}
 
 			tb.uninstall();
@@ -96,7 +115,7 @@ public class ConfiguratorSecurityTestCase extends OSGiTestCase {
 					return;
 
 				try {
-					ConfigurationAdmin cm = getContext()
+					ConfigurationAdmin cm = context
 							.getService(event.getReference());
 					switch (event.getType()) {
 						case ConfigurationEvent.CM_UPDATED :
@@ -113,7 +132,7 @@ public class ConfiguratorSecurityTestCase extends OSGiTestCase {
 				}
 			}
 		};
-		return getContext().registerService(ConfigurationListener.class, cl,
+		return context.registerService(ConfigurationListener.class, cl,
 				null);
 	}
 

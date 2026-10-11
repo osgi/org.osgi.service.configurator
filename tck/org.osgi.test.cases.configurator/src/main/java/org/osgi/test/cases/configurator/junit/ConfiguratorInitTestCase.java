@@ -18,6 +18,8 @@
 
 package org.osgi.test.cases.configurator.junit;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -26,21 +28,37 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Method;
 import java.net.URL;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.StringTokenizer;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.launch.Framework;
 import org.osgi.framework.launch.FrameworkFactory;
-import org.osgi.test.support.OSGiTestCase;
-public class ConfiguratorInitTestCase extends OSGiTestCase {
+import org.osgi.test.common.annotation.InjectBundleContext;
+public class ConfiguratorInitTestCase {
+
+	@InjectBundleContext
+	BundleContext		context;
+
+	String				testMethodName;
+
+	@BeforeEach
+	void testMethodName(TestInfo testInfo) {
+		testMethodName = testInfo.getTestMethod().get().getName();
+	}
 
 	private static final String	STORAGEROOT			= "org.osgi.test.cases.configurator.storageroot";
 	private static final String	FRAMEWORK_FACTORY	= "/META-INF/services/org.osgi.framework.launch.FrameworkFactory";
@@ -48,13 +66,14 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 	// in these tests we launch a new Framework each time and check whether the
 	// correct initial configurations are set
 
+	@Test
 	public void testInitialConfigFile() throws Exception {
 		String pid = "org.osgi.test.init.pid.file";
 
 		// write init_config.json to file
-		URL url = getContext().getBundle().getResource("init_config.json");
+		URL url = context.getBundle().getResource("init_config.json");
 		InputStream is = url.openConnection().getInputStream();
-		File f = getContext().getDataFile("init_config.json");
+		File f = context.getDataFile("init_config.json");
 		try (FileOutputStream out = new FileOutputStream(f)) {
 			byte[] buffer = new byte[1024];
 			int bytesRead;
@@ -64,23 +83,23 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 		}
 
 		// provide file uri as configurator.initial
-		Map<String,String> launchConfig = getConfiguration(getName());
+		Map<String,String> launchConfig = getConfiguration(testMethodName);
 		String config = f.toURI().toString();
 		launchConfig.put("configurator.initial", config);
 
 		Framework framework = startFramework(launchConfig);
 
 		// check configuration
-		assertTrue("There should be a configuration with pid " + pid,
-				hasConfig(framework, pid));
+		assertThat(hasConfig(framework, pid)).as("There should be a configuration with pid " + pid).isTrue();
 
 		framework.stop();
 		framework.waitForStop(10000);
 	}
 
+	@Test
 	public void testInitialConfig() throws Exception {
 		String pid = "org.osgi.test.init.pid1";
-		Map<String,String> launchConfig = getConfiguration(getName());
+		Map<String,String> launchConfig = getConfiguration(testMethodName);
 		String config = "{\":configurator:resource-version\": 1,"
 				+ "\":configurator:symbolic-name\": \"org.osgi.test.config.init\","
 				+ "\":configurator:version\": \"1.0.0\"," + "\"" + pid
@@ -90,16 +109,16 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 		Framework framework = startFramework(launchConfig);
 
 		// check configuration
-		assertTrue("There should be a configuration with pid " + pid,
-				hasConfig(framework, pid));
+		assertThat(hasConfig(framework, pid)).as("There should be a configuration with pid " + pid).isTrue();
 
 		framework.stop();
 		framework.waitForStop(10000);
 	}
 
+	@Test
 	public void testInitialConfigRequiresVersion() throws Exception {
 		String pid = "org.osgi.test.init.pid2";
-		Map<String,String> launchConfig = getConfiguration(getName());
+		Map<String,String> launchConfig = getConfiguration(testMethodName);
 		String config = "{\":configurator:resource-version\": 1,"
 				+ "\":configurator:symbolic-name\": \"org.osgi.test.config.init\","
 				+ "\"" + pid + "\":{\"foo\": \"bar\"}}";
@@ -108,16 +127,16 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 		Framework framework = startFramework(launchConfig);
 
 		// check configuration
-		assertFalse("This init config has a missing version",
-				hasConfig(framework, pid));
+		assertThat(hasConfig(framework, pid)).as("This init config has a missing version").isFalse();
 
 		framework.stop();
 		framework.waitForStop(10000);
 	}
 
+	@Test
 	public void testInitialConfigRequiresSymbolicname() throws Exception {
 		String pid = "org.osgi.test.init.pid3";
-		Map<String,String> launchConfig = getConfiguration(getName());
+		Map<String,String> launchConfig = getConfiguration(testMethodName);
 		String config = "{\":configurator:resource-version\": 1,"
 				+ "\":configurator:version\": \"1.0.0\","
 				+ "\"" + pid + "\":{\"foo\": \"bar\"}}";
@@ -126,8 +145,7 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 		Framework framework = startFramework(launchConfig);
 
 		// check configuration
-		assertFalse("This init config has a missing symblicname",
-				hasConfig(framework, pid));
+		assertThat(hasConfig(framework, pid)).as("This init config has a missing symblicname").isFalse();
 
 		framework.stop();
 		framework.waitForStop(10000);
@@ -179,7 +197,7 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 			throws ClassNotFoundException {
 		BundleContext context = getBundleContextWithoutFail();
 		return context == null ? Class.forName(className)
-				: getContext().getBundle(0).loadClass(className);
+				: context.getBundle(0).loadClass(className);
 	}
 
 	private String getClassName(URL factoryService) throws IOException {
@@ -221,19 +239,17 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 	}
 
 	private String getStorageAreaRoot() {
-		String storageroot = getProperty(STORAGEROOT);
-		assertNotNull("Must set property: " + STORAGEROOT, storageroot);
+		String storageroot = AccessController.doPrivileged((PrivilegedAction<String>) () -> context.getProperty(STORAGEROOT));
+		assertThat(storageroot).as("Must set property: " + STORAGEROOT).isNotNull();
 		return storageroot;
 	}
 
 	protected File getStorageArea(String testName, boolean delete) {
 		File storageArea = new File(getStorageAreaRoot(), testName);
 		if (delete) {
-			assertTrue(
-					"Could not clean up storage area: " + storageArea.getPath(),
-					delete(storageArea));
-			assertTrue("Could not create storage area directory: "
-					+ storageArea.getPath(), storageArea.mkdirs());
+			assertThat(delete(storageArea)).as("Could not clean up storage area: " + storageArea.getPath()).isTrue();
+			assertThat(storageArea.mkdirs()).as("Could not create storage area directory: "
+					+ storageArea.getPath()).isTrue();
 		}
 		return storageArea;
 	}
@@ -257,8 +273,10 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 
 	private void installFramework(Framework f) throws Exception {
 		List<Bundle> bundles = new LinkedList<>();
-		StringTokenizer st = new StringTokenizer(getProperty(
-				"org.osgi.test.cases.configurator.bundles", ""), ",");
+		StringTokenizer st = new StringTokenizer(Objects.toString(
+				AccessController.doPrivileged((PrivilegedAction<String>) () -> context
+						.getProperty("org.osgi.test.cases.configurator.bundles")),
+				""), ",");
 		while (st.hasMoreTokens()) {
 			String bundle = st.nextToken();
 			Bundle b = f.getBundleContext().installBundle("file:" + bundle);
@@ -275,9 +293,9 @@ public class ConfiguratorInitTestCase extends OSGiTestCase {
 
 	private BundleContext getBundleContextWithoutFail() {
 		try {
-			if ("true".equals(getProperty("noframework")))
+			if ("true".equals(AccessController.doPrivileged((PrivilegedAction<String>) () -> context.getProperty("noframework"))))
 				return null;
-			return getContext();
+			return context;
 		} catch (Throwable t) {
 			return null; // don't fail
 		}
