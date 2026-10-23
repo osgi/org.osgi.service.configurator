@@ -23,6 +23,10 @@
     ],
     "xa": []
   },
+  "org.osgi.test.pid4f":
+  {
+    "mixed": ["hello", 3]
+  },
   "org.osgi.test.pid4b":
   {
     "ba:Boolean[]": [true, true, false, true],
