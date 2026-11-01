@@ -572,6 +572,35 @@ public class ConfiguratorTestCase {
 	}
 
 	@Test
+	public void testArraysMixed() throws Exception {
+		Deferred<Configuration> updated = new Deferred<>();
+		Deferred<Configuration> deleted = new Deferred<>();
+		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
+				"org.osgi.test.pid4f", updated, deleted);
+		Bundle tb2 = null;
+		try {
+			tb2 = installer.installBundle("tb2.jar", false);
+			tb2.start();
+
+			Dictionary<String,Object> props = getTimeoutPromise(updated)
+					.getValue().getProperties();
+			assertThat(props.get("mixed"))
+					.as("Mixed JSON arrays must become String arrays")
+					.isInstanceOf(String[].class);
+			assertThat((String[]) props.get("mixed")).containsExactly("hello", "3");
+			tb2.uninstall();
+			getTimeoutPromise(deleted).getValue();
+		} finally {
+			try {
+				if (tb2 != null && tb2.getState() != Bundle.UNINSTALLED)
+					tb2.uninstall();
+			} finally {
+				reg.unregister();
+			}
+		}
+	}
+
+	@Test
 	public void testArraysSpecificBoxed() throws Exception {
 		Deferred<Configuration> updated = new Deferred<>();
 
@@ -817,6 +846,139 @@ public class ConfiguratorTestCase {
 		} finally {
 			reg1.unregister();
 			reg2.unregister();
+		}
+	}
+
+	@Test
+	public void testInvalidBundleResourceSymbolicName() throws Exception {
+		assertBundleConfigIgnored("org.osgi.test.invalid.symbolicname");
+	}
+
+	@Test
+	public void testInvalidBundleResourceVersion() throws Exception {
+		assertBundleConfigIgnored("org.osgi.test.invalid.version");
+	}
+
+	private void assertBundleConfigIgnored(String pid) throws Exception {
+		String controlPid = "org.osgi.test.metadata.control";
+		Deferred<Configuration> updated = new Deferred<>();
+		Deferred<Configuration> deleted = new Deferred<>();
+		Deferred<Configuration> ignored = new Deferred<>();
+		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
+				controlPid, updated, deleted);
+		ServiceRegistration<ConfigurationListener> ignoredReg = registerConfigListener(
+				pid, ignored, null);
+		Bundle tb12 = null;
+		try {
+			assertThat(readConfig(pid))
+					.as("Precondition, should not yet have the test config").isNull();
+			tb12 = installer.installBundle("tb12.jar", false);
+			tb12.start();
+
+			// Wait for a valid resource in the same bundle before checking
+			// that the invalid resource was ignored.
+			assertThat(getTimeoutPromise(updated).getValue()
+					.getProperties().get("foo")).isEqualTo("bar");
+			assertThat(readConfig(pid)).as("The invalid resource must be ignored")
+					.isNull();
+			tb12.uninstall();
+			getTimeoutPromise(deleted).getValue();
+			assertThat(ignored.getPromise().isDone())
+					.as("The invalid resource must never create a configuration")
+					.isFalse();
+		} finally {
+			try {
+				if (tb12 != null && tb12.getState() != Bundle.UNINSTALLED)
+					tb12.uninstall();
+			} finally {
+				reg.unregister();
+				ignoredReg.unregister();
+			}
+		}
+	}
+
+	@Test
+	public void testConfiguratorPolicyKeyWithTypeSuffix() throws Exception {
+		String pid = "org.osgi.test.reserved.policy";
+		Deferred<Configuration> updated = new Deferred<>();
+		Deferred<Configuration> controlUpdated = new Deferred<>();
+		Deferred<Configuration> controlDeleted = new Deferred<>();
+		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
+				pid, updated, null);
+		ServiceRegistration<ConfigurationListener> controlReg = registerConfigListener(
+				"org.osgi.test.reserved.control", controlUpdated, controlDeleted);
+		Configuration cfg = configAdmin.getConfiguration(pid, "?");
+		Bundle tb13 = null;
+		try {
+			Dictionary<String,Object> props = new Hashtable<>();
+			props.put("foo", "manual");
+			cfg.update(props);
+			getTimeoutPromise(updated).getValue();
+			long changeCount = cfg.getChangeCount();
+
+			tb13 = installer.installBundle("tb13.jar", false);
+			tb13.start();
+			getTimeoutPromise(controlUpdated).getValue();
+
+			// :configurator:policy:String is a distinct reserved key, not
+			// a typed spelling of :configurator:policy. The default applies.
+			Configuration current = readConfig(pid);
+			assertThat(current).as("The manual configuration must be retained")
+					.isNotNull();
+			assertThat(current.getProperties().get("foo"))
+					.as("A suffixed policy key must not force an overwrite")
+					.isEqualTo("manual");
+			assertThat(cfg.getChangeCount()).isEqualTo(changeCount);
+			tb13.uninstall();
+			getTimeoutPromise(controlDeleted).getValue();
+			assertThat(readConfig(pid))
+					.as("The manual configuration must be retained").isNotNull();
+			assertThat(readConfig(pid).getProperties().get("foo"))
+					.isEqualTo("manual");
+		} finally {
+			try {
+				if (tb13 != null && tb13.getState() != Bundle.UNINSTALLED)
+					tb13.uninstall();
+			} finally {
+				reg.unregister();
+				controlReg.unregister();
+				Configuration remaining = readConfig(pid);
+				if (remaining != null)
+					remaining.delete();
+			}
+		}
+	}
+
+	@Test
+	public void testConfiguratorRankingKeyWithTypeSuffix() throws Exception {
+		Deferred<Configuration> updated = new Deferred<>();
+		Deferred<Configuration> deleted = new Deferred<>();
+		ServiceRegistration<ConfigurationListener> reg = registerConfigListener(
+				"org.osgi.test.reserved.ranking", updated, deleted);
+		Bundle tb13 = null;
+		try {
+			tb13 = installer.installBundle("tb13.jar", false);
+			tb13.start();
+			Dictionary<String,Object> props = getTimeoutPromise(updated)
+					.getValue().getProperties();
+
+			// Only the exact :configurator:ranking key sets the ranking:
+			// 15 wins over 10, regardless of the suffixed values 5 and 20.
+			assertThat(props.get("foo")).isEqualTo("winning");
+			assertThat(props.size())
+					.as("Reserved properties must not reach Configuration Admin")
+					.isEqualTo(2);
+			assertThat(props.get(":configurator:ranking")).isNull();
+			assertThat(props.get(":configurator:ranking:Integer")).isNull();
+			tb13.uninstall();
+			getTimeoutPromise(deleted).getValue();
+		} finally {
+			try {
+				if (tb13 != null && tb13.getState() != Bundle.UNINSTALLED)
+					tb13.uninstall();
+			} finally {
+				reg.unregister();
+			}
 		}
 	}
 
